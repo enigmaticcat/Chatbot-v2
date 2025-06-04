@@ -11,6 +11,8 @@ from langchain.retrievers import EnsembleRetriever  # Kết hợp nhiều retrie
 from langchain_community.retrievers import BM25Retriever  # Retriever dựa trên BM25
 from langchain_core.documents import Document  # Lớp Document
 from dotenv import load_dotenv
+from langchain.agents import create_react_agent
+from langchain.agents import initialize_agent
 import os
 
 load_dotenv()
@@ -64,11 +66,33 @@ def get_retriever(collection_name: str = "data_test") -> EnsembleRetriever:
         return BM25Retriever.from_documents(default_doc)
 
 # Tạo công cụ tìm kiếm cho agent
-tool = create_retriever_tool(
-    get_retriever(),
-    "find",
-    "Search for information of Stack AI."
+# tool = create_retriever_tool(
+#     get_retriever(),
+#     "find",
+#     "Search for information of Stack AI."
+# )
+# --- MỚI: luôn trả về chuỗi ≠ "" để Gemini không lỗi 400 ---
+from langchain.tools import Tool       # thêm import này
+
+retriever = get_retriever()            # giữ retriever gốc
+
+def run_retriever_safe(query: str) -> str:
+    """
+    Gọi retriever. Nếu KHÔNG tìm thấy tài liệu,
+    trả về 'NO_RESULTS' (≥1 ký tự) thay vì chuỗi rỗng ''.
+    """
+    docs = retriever.invoke(query)
+    # if not docs:
+    #     return "NO_RESULTS"
+    # return "\n\n".join(d.page_content for d in docs[:4])
+    return "\n\n".join(d.page_content for d in docs) if docs else "NO_RESULTS"
+
+tool = Tool(
+    name="find",
+    func=run_retriever_safe,
+    description="Search Bitcoin knowledge base and return text."
 )
+
 
 def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
     """
@@ -80,7 +104,7 @@ def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
     # Khởi tạo LLM dựa trên lựa chọn model
     if model_choice == "gemini":
         llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             temperature=0,
             api_key=GEMINI_API_KEY,
             convert_system_message_to_human=True  # Gemini cần convert system message
@@ -95,14 +119,14 @@ def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
     tools = [tool]
     
     # Thiết lập prompt template cho agent
-    system = """You are an expert at AI. Your name is ChatchatAI. 
-    You are helpful, harmless, and honest. Always provide accurate information based on the context provided."""
+    system = """You are ChatchatAI, an expert assistant.
+    """
+
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system),
-        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
+        # MessagesPlaceholder(variable_name="agent_scratchpad", optional=True),
     ])
 
     # Tạo và trả về agent
@@ -111,21 +135,28 @@ def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
         agent = create_openai_functions_agent(llm=llm, tools=tools, prompt=prompt)
         return AgentExecutor(agent=agent, tools=tools, verbose=True)
     except Exception as e:
-        print(f"Không thể tạo OpenAI functions agent: {e}")
-        # Fallback: Tạo agent cơ bản hơn
-        from langchain.agents import create_react_agent
+        # print(f"Không thể tạo OpenAI functions agent: {e}")
+        # # Fallback: Tạo agent cơ bản hơn
+        # from langchain.agents import create_react_agent
         
-        # Điều chỉnh prompt cho ReAct agent
-        react_prompt = ChatPromptTemplate.from_messages([
-            ("system", f"{system}\n\nYou have access to the following tools:\n{{tools}}\n\nUse the following format:\nQuestion: the input question\nThought: think about what to do\nAction: the action to take, should be one of [{{tool_names}}]\nAction Input: the input to the action\nObservation: the result of the action\n... (this Thought/Action/Action Input/Observation can repeat N times)\nThought: I now know the final answer\nFinal Answer: the final answer to the original input question"),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        # # Điều chỉnh prompt cho ReAct agent
+        # react_prompt = ChatPromptTemplate.from_messages([
+        #     ("system", f"{system}\n\nYou have access to the following tools:\n{{tools}}\n\nUse the following format:\nQuestion: the input question\nThought: think about what to do\nAction: the action to take, should be one of [{{tool_names}}]\nAction Input: the input to the action\nObservation: the result of the action\n... (this Thought/Action/Action Input/Observation can repeat N times)\nThought: I now know the final answer\nFinal Answer: the final answer to the original input question"),
+            
+        #     ("human", "{input}"),
+        #     # MessagesPlaceholder(variable_name="agent_scratchpad"),
+        # ])
         
-        agent = create_react_agent(llm=llm, tools=tools, prompt=react_prompt)
-        return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-
+        # agent = create_react_agent(llm=llm, tools=tools, prompt=react_prompt)
+        # return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+        agent_executor = initialize_agent(
+            tools=tools,
+            llm=llm,
+            agent="zero-shot-react-description",   # không cần agent_scratchpad
+            verbose=True,
+            handle_parsing_errors=True,
+        )
+        return agent_executor
 # Khởi tạo retriever và agent
 retriever = get_retriever()
 agent_executor = get_llm_and_agent(retriever)

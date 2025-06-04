@@ -74,8 +74,9 @@ def save_data_locally(documents, filename, directory):
     # Chuyển đổi documents thành định dạng có thể serialize
     data_to_save = [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in documents]
     # Lưu vào file JSON
-    with open(file_path, 'w') as file:
-        json.dump(data_to_save, file, indent=4)
+    with open(file_path, 'w', encoding='utf-8') as file:
+        json.dump(data_to_save, file, indent=4, ensure_ascii=False)
+
     print(f'Data saved to {file_path}')  # In thông báo lưu thành công
 
 def main():
@@ -87,6 +88,7 @@ def main():
     """
     # Crawl dữ liệu từ trang docs của stack-ai
     data = crawl_web('https://tapchibitcoin.io')
+    # data = crawl_web('https://tapchibitcoin.xyusf')
     # Lưu dữ liệu vào thư mục data_v2
     save_data_locally(data, 'stack.json', 'data')
     print('data: ', data)  # In dữ liệu đã crawl

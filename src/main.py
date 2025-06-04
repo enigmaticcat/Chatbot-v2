@@ -10,6 +10,7 @@ Chức năng:
 import streamlit as st  # Thư viện tạo giao diện web
 from dotenv import load_dotenv 
 import asyncio, nest_asyncio
+
 try:
     asyncio.get_running_loop()
 except RuntimeError:
@@ -216,50 +217,97 @@ def setup_chat_interface(model_choice):
     return msgs
 
 # === XỬ LÝ TIN NHẮN NGƯỜI DÙNG ===
+# def handle_user_input(msgs, agent_executor):
+#     """
+#     Xử lý khi người dùng gửi tin nhắn:
+#     1. Hiển thị tin nhắn người dùng
+#     2. Gọi AI xử lý và trả lời
+#     3. Lưu vào lịch sử chat
+#     """
+#     if prompt := st.chat_input("Hãy hỏi tôi bất cứ điều gì về Crypto!"):
+#         # Lưu và hiển thị tin nhắn người dùng
+#         st.session_state.messages.append({"role": "human", "content": prompt})
+#         st.chat_message("human").write(prompt)
+#         msgs.add_user_message(prompt)
+
+#         # Xử lý và hiển thị câu trả lời
+#         with st.chat_message("assistant"):
+#             st_callback = StreamlitCallbackHandler(st.container())
+            
+#             # Lấy lịch sử chat
+#             # chat_history = [
+#             #     {"role": msg["role"], "content": msg["content"]}
+#             #     for msg in st.session_state.messages[:-1]
+#             # ]
+
+#             try:
+#                 # Gọi AI xử lý
+#                 response = agent_executor.invoke(
+#                     {
+#                         "input": prompt,
+#                     },
+#                     {"callbacks": [st_callback]}
+#                 )
+
+#                 # Lưu và hiển thị câu trả lời
+#                 output = response["output"]
+#                 st.session_state.messages.append({"role": "assistant", "content": output})
+#                 msgs.add_ai_message(output)
+#                 st.write(output)
+                
+#             except Exception as e:
+#                 error_msg = f"Đã xảy ra lỗi: {str(e)}"
+#                 st.error(error_msg)
+#                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
+#                 msgs.add_ai_message(error_msg)
 def handle_user_input(msgs, agent_executor):
     """
     Xử lý khi người dùng gửi tin nhắn:
-    1. Hiển thị tin nhắn người dùng
-    2. Gọi AI xử lý và trả lời
-    3. Lưu vào lịch sử chat
+    - Hiển thị tin nhắn người dùng
+    - Gọi AI xử lý và trả lời
+    - Lưu vào lịch sử chat, đảm bảo không gửi nội dung rỗng
     """
-    if prompt := st.chat_input("Hãy hỏi tôi bất cứ điều gì về Stack AI!"):
+    # Kiểm tra tin nhắn đầu vào
+    if raw := st.chat_input("Hãy hỏi tôi bất cứ điều gì về Crypto!"):
+        prompt = raw.strip()                 # bỏ khoảng trắng thừa
+        if not prompt:                       # nếu người dùng bấm Enter nhưng không gõ gì
+            st.warning("⚠️ Bạn chưa nhập nội dung.")  # thông báo
+            return   
+
         # Lưu và hiển thị tin nhắn người dùng
         st.session_state.messages.append({"role": "human", "content": prompt})
         st.chat_message("human").write(prompt)
         msgs.add_user_message(prompt)
 
-        # Xử lý và hiển thị câu trả lời
+        # Lọc các tin nhắn không hợp lệ trong lịch sử
+        def is_valid_message(msg):
+            return "role" in msg and "content" in msg and msg["content"].strip()
+
+        valid_messages = [msg for msg in st.session_state.messages if is_valid_message(msg)]
+        st.session_state.messages = valid_messages  # Cập nhật lịch sử
+
+        # Gọi AI và hiển thị kết quả
         with st.chat_message("assistant"):
             st_callback = StreamlitCallbackHandler(st.container())
-            
-            # Lấy lịch sử chat
-            chat_history = [
-                {"role": msg["role"], "content": msg["content"]}
-                for msg in st.session_state.messages[:-1]
-            ]
-
             try:
-                # Gọi AI xử lý
                 response = agent_executor.invoke(
-                    {
-                        "input": prompt,
-                        "chat_history": chat_history
-                    },
+                    {"input": prompt},
                     {"callbacks": [st_callback]}
                 )
 
-                # Lưu và hiển thị câu trả lời
-                output = response["output"]
+                output = response.get("output", "").strip()
+                if not output:
+                    output = "⚠️ Model không phản hồi nội dung nào."
+
                 st.session_state.messages.append({"role": "assistant", "content": output})
                 msgs.add_ai_message(output)
                 st.write(output)
-                
+
             except Exception as e:
-                error_msg = f"Đã xảy ra lỗi: {str(e)}"
-                st.error(error_msg)
+                error_msg = f"❌ Đã xảy ra lỗi: {str(e)}"
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
                 msgs.add_ai_message(error_msg)
+                st.error(error_msg)
 
 # === HÀM CHÍNH ===
 def main():
